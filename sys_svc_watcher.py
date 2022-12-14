@@ -1,10 +1,12 @@
 #!/usr/bin/python
-
+import functools
 import os
+import re
 import signal
 import subprocess
 import sys
 import traceback
+from re import Pattern
 
 import dbus
 from dbus.mainloop.glib import DBusGMainLoop
@@ -38,28 +40,26 @@ SVC_PATH_REPLACEMENTS = {
     '\\': '_5c'
 }
 
-BLACK_LIST = [
-    'anacron.service',
-    'motd-news.service',
-    'grub-common.service',
-    'apt-daily.service',
-    'man-db.service',
-    'grub-initrd-fallback.service',
-    'systemd-suspend.service',
-    'sleep.target',
-    'suspend.target',
-    'ua-timer.service',
-    'logrotate.service',
-    'dpkg-db-backup.service',
-    'plocate-updatedb.service'
-]
+BLACK_LIST_FILE: str = '/etc/sys-svc-watcher/ignore.list'
+BLACK_LIST: list[str] = []
+BLACK_LIST_REGEX: Pattern[str] | None = None
 
 system_bus: dbus.SystemBus
 loop: GLib.MainLoop
 
+if sys.stdin.isatty():
+    print = print
+else:
+    print = functools.partial(print, flush=True)
+
 
 def print_err(msg: str):
     print(msg, file=sys.stderr)
+
+
+def print_exc_line():
+    etype, value, tb = sys.exc_info()
+    print(''.join(traceback.format_exception_only(etype, value)), file=sys.stderr, end='')
 
 
 def handle_dbus_signal(*args) -> None:
@@ -75,9 +75,6 @@ def handle_dbus_signal(*args) -> None:
 
     unit: str = args[2]
 
-    if unit in BLACK_LIST:
-        return
-
     for frm, to in SVC_PATH_REPLACEMENTS.items():
         unit = unit.replace(frm, to)
 
@@ -90,19 +87,29 @@ def handle_dbus_signal(*args) -> None:
         args=(SYS_D_SVC + '.Unit', 'ActiveState')
     )
 
-    if not (nid := NOTIF_IDS.get(args[2])):
-        nid = str(os.getpid()) + '|' + args[2]
-        NOTIF_IDS[args[2]] = nid
+    unit = args[2]
+    msg: str = f'{unit} becomes {state}'
 
-    if state != 'active':
-        dbus_notify.notify(
-            replace_old=nid,
-            app_icon='text-x-systemd-unit',
-            summary='Service state changed',
-            body=f'{args[2]} becomes {state}',
-            timeout=0,
-            bus=system_bus
-        )
+    if state == 'active' or (
+            state == 'inactive' and (
+            unit in BLACK_LIST or (BLACK_LIST_REGEX and BLACK_LIST_REGEX.match(unit)))):
+        print('Ignoring:', msg)
+        return
+
+    print(msg)
+
+    if not (nid := NOTIF_IDS.get(unit)):
+        nid = str(os.getpid()) + '|' + unit
+        NOTIF_IDS[unit] = nid
+
+    dbus_notify.notify(
+        replace_old=nid,
+        app_icon='text-x-systemd-unit',
+        summary='Service state changed',
+        body=f'{msg}',
+        timeout=0,
+        bus=system_bus
+    )
 
 
 def kill_me(sig: int = None, *_):
@@ -120,10 +127,43 @@ def kill_me(sig: int = None, *_):
         loop.quit()
 
 
+def load_config():
+    if os.path.exists(BLACK_LIST_FILE):
+        try:
+            with open(BLACK_LIST_FILE) as file:
+                BLACK_LIST.clear()
+                global BLACK_LIST_REGEX
+                black_list_re: list[str] = []
+
+                for line in file.read().split('\n'):
+                    line = line.strip()
+
+                    if line.startswith('#'):
+                        continue
+
+                    if line.startswith('REGEX|'):
+                        black_list_re.append(line.removeprefix('REGEX|'))
+                    else:
+                        BLACK_LIST.append(line)
+
+                if black_list_re:
+                    BLACK_LIST_REGEX = re.compile('|'.join(black_list_re))
+
+                print(f'Loaded {len(BLACK_LIST)} (strings) + '
+                      f'{len(black_list_re)} (regex) services from {BLACK_LIST_FILE}')
+
+        except (PermissionError, FileNotFoundError):
+            print_exc_line()
+
+
 def set_signal_handlers():
     for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGQUIT, signal.SIGTERM):
         signal.signal(sig, kill_me)
+
     signal.signal(signal.SIGCHLD, lambda *_: os.wait())
+
+    if not sys.stdin.isatty():
+        signal.signal(signal.SIGUSR1, lambda *_: load_config())
 
 
 def handle_uncaught_exc(err_type, value, tb):
@@ -160,10 +200,11 @@ def start():
         check_signal_exported()
         sys.exit()
 
+    load_config()
+
     DBusGMainLoop(set_as_default=True)
 
     global system_bus
-
     system_bus = dbus.SystemBus()
 
     sys.excepthook = handle_uncaught_exc
@@ -174,9 +215,12 @@ def start():
     else:
         priv_exec = ''
 
-    if sys.stdin.isatty() or os.getuid() == 0:
+    show_sig_receivers: bool = sys.stdin.isatty() or os.getuid() == 0
+
+    if show_sig_receivers:
+        print('\nBEFORE:')
         subprocess.call(f'{priv_exec} {sys.argv[0]} {CHECK_SIGNAL_EXPORTED}'.split())
-        print('Adding signal receivers...')
+        print('\nAdding signal receivers...\n')
 
     system_bus.call_blocking(
         SYS_D_SVC,
@@ -195,8 +239,10 @@ def start():
         SYS_D_PATH
     )
 
-    if sys.stdin.isatty() or os.getuid() == 0:
+    if show_sig_receivers:
+        print('AFTER:')
         subprocess.call(f'{priv_exec} {sys.argv[0]} {CHECK_SIGNAL_EXPORTED}'.split())
+        print()
 
 
 start()
