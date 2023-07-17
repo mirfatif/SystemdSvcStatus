@@ -1,0 +1,25 @@
+[Unit]
+Description=SystemD Service Death Watcher (system)
+
+StartLimitIntervalSec=1d
+StartLimitBurst=5
+
+[Service]
+ExecStart=/usr/bin/python3 -m mirfatif.systemd_svc_status.systemd_svc_watcher --system
+
+AmbientCapabilities=
+CapabilityBoundingSet=
+
+StandardOutput=journal
+StandardError=journal
+
+Restart=always
+RestartSec=5
+
+User=nobody
+Group=nogroup
+
+Environment=PYTHONUSERBASE=/opt/python_user_base
+
+[Install]
+WantedBy=multi-user.target

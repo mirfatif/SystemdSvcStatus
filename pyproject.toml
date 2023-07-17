@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "systemd_svc_status"
+authors = [
+    { name = "Irfan Latif", email = "mirfatif.dev@gmail.com" },
+]
+description = "Monitor `systemd` services status"
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Operating System :: POSIX :: Linux",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "sys_desk_notifd @ git+https://github.com/mirfatif/SysDeskNotifD"
+]
+dynamic = ["version"]
+
+[project.urls]
+"Homepage" = "https://github.com/mirfatif/SystemdSvcStatus"
+"Bug Tracker" = "https://github.com/mirfatif/SystemdSvcStatus/issues"
+
+[project.scripts]
+"sysd_services.py" = "mirfatif.systemd_svc_status.list_systemd_svc:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"mirfatif.systemd_svc_status.etc.systemd.user" = ["systemd_svc_watcher.service"]
+"mirfatif.systemd_svc_status.etc.systemd.system" = ["systemd_svc_watcher.service"]
+
+# For dynamic version from git tag.
+[tool.setuptools_scm]

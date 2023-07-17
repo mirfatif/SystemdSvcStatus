@@ -1,0 +1,32 @@
+# No notification when these services become 'inactive'.
+# Empty lines are ignored.
+# Lines starting with 'REGEX|' are matched as regex.
+anacron.service
+apt-daily.service
+apt-daily-upgrade.service
+bluetooth.target
+dpkg-db-backup.service
+fwupd-refresh.service
+grub-common.service
+grub-initrd-fallback.service
+logrotate.service
+man-db.service
+motd-news.service
+plocate-updatedb.service
+sleep.target
+suspend.target
+systemd-suspend.service
+systemd-tmpfiles-clean.service
+ua-timer.service
+update-notifier-download.service
+
+REGEX|session-c[0-9]*.scope
+REGEX|user@[0-9]*.service
+REGEX|user-[0-9]*.slice
+REGEX|user-runtime-dir@[0-9]*.service
+
+# Waydroid
+REGEX|dev-disk-by\\x2dlabel-.*.device
+REGEX|dev-disk-by\\x2duuid-.*.device
+REGEX|dev-loop[0-9]*.device
+REGEX|sys-devices-virtual-block-loop[0-9]*.device

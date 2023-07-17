@@ -1,1 +1,4 @@
-.idea
+/.idea/
+/src/*.egg-info/
+/dist/
+/build/
